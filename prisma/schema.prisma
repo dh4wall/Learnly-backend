@@ -1,0 +1,36 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              Int         @id @default(autoincrement())
+  email           String      @unique
+  password        String?
+  provider        String?
+  providerId      String?     @map("provider_id")
+  isEmailVerified Boolean     @default(false) @map("is_email_verified")
+  isNew           Boolean     @default(true) @map("is_new")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  onboarding      Onboarding? @relation("UserToOnboarding")
+
+  @@map("users")
+}
+
+model Onboarding {
+  userId         Int       @id @map("user_id")
+  educationLevel String?   @map("education_level")
+  username       String?   @unique
+  interests      String[]
+  createdAt      DateTime  @default(now()) @map("created_at")
+  user           User      @relation("UserToOnboarding", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding")
+}
