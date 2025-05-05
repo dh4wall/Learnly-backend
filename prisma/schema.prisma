@@ -34,3 +34,60 @@ model Onboarding {
 
   @@map("onboarding")
 }
+
+
+model Teacher {
+  id                Int       @id @default(autoincrement())
+  email             String    @unique
+  password          String?   // Hashed password, optional for Google auth
+  provider          String    // e.g., "email", "google"
+  providerId        String    @unique // Unique ID from provider (e.g., Google sub ID)
+  isEmailVerified   Boolean   @default(false)
+  isNew           Boolean     @default(true) @map("is_new")
+  name              String
+  username          String?   @unique // Unique username, set during onboarding
+  teachingExperience String?  // e.g., "5 years" or "Beginner", set during onboarding
+  fieldOfStudy      String?   // e.g., "Computer Science", set during onboarding
+  bio               String?   // Optional bio for teacher profile
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  courses           Course[]  // One-to-many relationship with Course
+}
+
+model Course {
+  id              Int         @id @default(autoincrement())
+  teacherId       Int
+  teacher         Teacher     @relation(fields: [teacherId], references: [id])
+  name            String
+  thumbnailUrl    String?     // URL to thumbnail image
+  createdAt       DateTime    @default(now())
+  price           Float
+  discountedPrice Float?      // Optional discounted price
+  discountPercent Float?      // Optional discount percentage
+  divisions       Division[]  // One-to-many relationship with Division
+}
+
+model Division {
+  id          Int       @id @default(autoincrement())
+  courseId    Int
+  course      Course    @relation(fields: [courseId], references: [id])
+  title       String    // e.g., "Week 1" or "Chapter 1"
+  order       Int       // For sorting divisions (e.g., Week 1, Week 2)
+  contents    Content[] // One-to-many relationship with Content
+}
+
+model Content {
+  id          Int       @id @default(autoincrement())
+  divisionId  Int
+  division    Division  @relation(fields: [divisionId], references: [id])
+  type        ContentType
+  title       String    // e.g., "Introduction Video" or "Lecture Notes"
+  fileUrl     String    // URL to video or PDF file
+  duration    Int?      // Optional duration in seconds (for videos)
+  createdAt   DateTime  @default(now())
+}
+
+enum ContentType {
+  VIDEO
+  PDF
+}
