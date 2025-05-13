@@ -43,7 +43,7 @@ model Teacher {
   provider          String    // e.g., "email", "google"
   providerId        String    @unique // Unique ID from provider (e.g., Google sub ID)
   isEmailVerified   Boolean   @default(false)
-  isNew           Boolean     @default(true) @map("is_new")
+  isNew             Boolean   @default(true) @map("is_new")
   name              String
   username          String?   @unique // Unique username, set during onboarding
   teachingExperience String?  // e.g., "5 years" or "Beginner", set during onboarding
@@ -77,17 +77,24 @@ model Division {
 }
 
 model Content {
-  id          Int       @id @default(autoincrement())
+  id          Int         @id @default(autoincrement())
   divisionId  Int
-  division    Division  @relation(fields: [divisionId], references: [id])
+  division    Division    @relation(fields: [divisionId], references: [id])
   type        ContentType
-  title       String    // e.g., "Introduction Video" or "Lecture Notes"
-  fileUrl     String    // URL to video or PDF file
-  duration    Int?      // Optional duration in seconds (for videos)
-  createdAt   DateTime  @default(now())
+  category    ContentCategory // New field for Lectures, Notes, Resources
+  title       String      // e.g., "Introduction Video" or "Lecture Notes"
+  fileUrl     String      // URL to video or PDF file
+  duration    Int?        // Optional duration in seconds (for videos)
+  createdAt   DateTime    @default(now())
 }
 
 enum ContentType {
   VIDEO
   PDF
+}
+
+enum ContentCategory {
+  LECTURES
+  NOTES
+  RESOURCES
 }

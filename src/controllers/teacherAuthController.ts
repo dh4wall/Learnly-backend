@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as JwtStrategy } from 'passport-jwt';
 import prisma from '../utils/db';
 import { sendTeacherVerificationEmail } from '../services/teacherEmailService';
 import { JwtPayloadTeacher } from '../types/teacher';
@@ -49,6 +50,48 @@ export const teacherPassportConfig = () => {
         } catch (error) {
           console.error('Teacher GoogleStrategy error:', error);
           return done(error);
+        }
+      }
+    )
+  );
+
+  const jwtSecret = process.env.JWT_SECRET as string;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET is not defined in environment variables');
+  }
+
+  // Custom JWT extractor from cookie
+  const cookieExtractor = (req: Request) => {
+    let token = null;
+    if (req && req.cookies) {
+      token = req.cookies['teacher_jwt'] || req.cookies['teacher_onboarding_jwt'];
+      console.log('Extracted token from cookies:', token ? 'Present' : 'Missing');
+    }
+    return token;
+  };
+
+  passport.use(
+    'teacher-jwt',
+    new JwtStrategy(
+      {
+        jwtFromRequest: cookieExtractor,
+        secretOrKey: jwtSecret,
+      },
+      async (payload: JwtPayloadTeacher, done: (error: any, user?: any) => void) => {
+        try {
+          console.log('JWT payload:', payload);
+          const teacher = await prisma.teacher.findUnique({
+            where: { email: payload.email },
+          });
+          if (teacher) {
+            console.log('Teacher found:', teacher.email);
+            return done(null, teacher);
+          }
+          console.log('Teacher not found for email:', payload.email);
+          return done(null, false);
+        } catch (error) {
+          console.error('Teacher JWT strategy error:', error);
+          return done(error, false);
         }
       }
     )
@@ -206,7 +249,6 @@ export const oauthLogin = async (req: Request, res: Response, next: NextFunction
       sameSite: 'strict',
     });
 
-    
     const redirectUrl = teacher.isNew 
       ? `${process.env.FRONTEND_URL}/teacher/onboarding` 
       : `${process.env.FRONTEND_URL}/teacher/dashboard`;
@@ -222,7 +264,7 @@ export const oauthLogin = async (req: Request, res: Response, next: NextFunction
 
 export const saveOnboarding = async (req: Request, res: Response) => {
   const { username, teachingExperience, fieldOfStudy } = req.body;
-  const user = req.user as JwtPayloadTeacher;
+  const user = req.user as Teacher;
 
   try {
     const teacher = await prisma.teacher.findUnique({ where: { email: user.email } });
@@ -268,18 +310,24 @@ export const logout = (req: Request, res: Response) => {
 
 export const verify = async (req: Request, res: Response) => {
   const token = req.cookies.teacher_jwt || req.cookies.teacher_onboarding_jwt;
+  console.log('Verify endpoint: Received token from cookies:', token ? 'Present' : 'Missing');
   if (!token) {
-    return res.status(401).json({ authenticated: false });
+    console.log('Verify endpoint: No token provided');
+    return res.status(401).json({ authenticated: false, message: 'No token provided' });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayloadTeacher;
+    console.log('Verify endpoint: Token decoded:', decoded);
     const teacher = await prisma.teacher.findUnique({ where: { email: decoded.email } });
     if (!teacher) {
-      return res.status(401).json({ authenticated: false });
+      console.log('Verify endpoint: Teacher not found for email:', decoded.email);
+      return res.status(401).json({ authenticated: false, message: 'Teacher not found' });
     }
+    console.log('Verify endpoint: Teacher verified:', teacher.email);
     res.json({ authenticated: true, isNew: teacher.isNew });
   } catch (error) {
-    res.status(401).json({ authenticated: false });
+    console.error('Verify endpoint error:', error);
+    res.status(401).json({ authenticated: false, message: 'Invalid or expired token' });
   }
 };
