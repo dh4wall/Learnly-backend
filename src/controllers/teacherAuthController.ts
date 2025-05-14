@@ -1,3 +1,4 @@
+// server/src/controllers/teacherAuthController.ts
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -8,6 +9,66 @@ import prisma from '../utils/db';
 import { sendTeacherVerificationEmail } from '../services/teacherEmailService';
 import { JwtPayloadTeacher } from '../types/teacher';
 import { Teacher } from '@prisma/client';
+import { courseCache, divisionCache, contentCache } from '../routes/courseRoutes';
+
+const fetchTeacherData = async (teacherId: number) => {
+  try {
+    console.log(`Fetching data for teacher ${teacherId}...`);
+
+    const courses = await prisma.course.findMany({
+      where: { teacherId },
+      select: {
+        id: true,
+        name: true,
+        thumbnailUrl: true,
+        price: true,
+      },
+    });
+    courseCache.set(teacherId, courses.map(course => ({
+      id: course.id,
+      name: course.name,
+      thumbnailUrl: course.thumbnailUrl,
+      price: course.price || 0,
+    })));
+    console.log(`Cached ${courses.length} courses for teacher ${teacherId}:`, courses);
+
+    for (const course of courses) {
+      const divisions = await prisma.division.findMany({
+        where: { courseId: course.id },
+        select: {
+          id: true,
+          title: true,
+          order: true,
+        },
+        orderBy: { order: 'asc' },
+      });
+      divisionCache.set(course.id, divisions);
+      console.log(`Cached ${divisions.length} divisions for course ${course.id}`);
+    }
+
+    const divisionIds = Array.from(divisionCache.keys()).flatMap(courseId =>
+      (divisionCache.get(courseId) || []).map(div => div.id)
+    );
+    for (const divisionId of divisionIds) {
+      const contents = await prisma.content.findMany({
+        where: { divisionId },
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          category: true,
+          fileUrl: true,
+          duration: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      contentCache.set(divisionId, contents);
+      console.log(`Cached ${contents.length} contents for division ${divisionId}`);
+    }
+  } catch (error) {
+    console.error(`Error fetching teacher data for teacher ${teacherId}:`, error);
+  }
+};
 
 export const teacherPassportConfig = () => {
   passport.use(
@@ -60,12 +121,11 @@ export const teacherPassportConfig = () => {
     throw new Error('JWT_SECRET is not defined in environment variables');
   }
 
-  // Custom JWT extractor from cookie
   const cookieExtractor = (req: Request) => {
     let token = null;
     if (req && req.cookies) {
       token = req.cookies['teacher_jwt'] || req.cookies['teacher_onboarding_jwt'];
-      console.log('Extracted token from cookies:', token ? 'Present' : 'Missing');
+      console.log('Extracted token:', token ? 'Present' : 'Missing', 'Cookies:', req.cookies);
     }
     return token;
   };
@@ -325,7 +385,8 @@ export const verify = async (req: Request, res: Response) => {
       return res.status(401).json({ authenticated: false, message: 'Teacher not found' });
     }
     console.log('Verify endpoint: Teacher verified:', teacher.email);
-    res.json({ authenticated: true, isNew: teacher.isNew });
+    await fetchTeacherData(teacher.id); // Ensure cache is populated
+    res.json({ authenticated: true, isNew: teacher.isNew, teacher });
   } catch (error) {
     console.error('Verify endpoint error:', error);
     res.status(401).json({ authenticated: false, message: 'Invalid or expired token' });
